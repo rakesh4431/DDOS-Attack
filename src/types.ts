@@ -9,8 +9,9 @@ export interface Packet {
 
 export interface TrafficStats {
   timestamp: string;
-  requests: number;
+  normal: number;
   malicious: number;
+  requests: number;
 }
 
 export interface BlockedIP {

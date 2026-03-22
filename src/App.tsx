@@ -27,24 +27,41 @@ import { TrafficStats, BlockedIP } from './types';
 // Simulation Constants
 const MAX_DATA_POINTS = 40;
 const ATTACK_IP_POOL = ['45.33.22.11', '103.44.12.99', '185.12.4.55', '202.1.4.5', '77.88.99.10'];
+const NORMAL_IP_POOL = ['192.168.1.45', '10.0.0.12', '172.16.0.5', '8.8.8.8', '1.1.1.1'];
+
+interface TrafficLogEntry {
+  id: number;
+  timestamp: string;
+  sourceIp: string;
+  reqRate: string;
+  payload: string;
+  protocol: string;
+  classification: 'Normal' | 'DDoS Attack';
+  confidence: string;
+  type: 'info' | 'warning';
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'ml' | 'project'>('dashboard');
   const [isAttackActive, setIsAttackActive] = useState(false);
   const [stats, setStats] = useState<TrafficStats[]>([]);
   const [blockedIPs, setBlockedIPs] = useState<BlockedIP[]>([]);
-  const [toasts, setToasts] = useState<{id: number, ip: string}[]>([]);
+  const [toasts, setToasts] = useState<{id: number, ip?: string, message?: string, type?: 'alert' | 'block'}[]>([]);
   const [serverLoad, setServerLoad] = useState(12);
+  const [trafficLogs, setTrafficLogs] = useState<TrafficLogEntry[]>([]);
+  const [attacksDetected, setAttacksDetected] = useState(0);
   
   const statsRef = useRef<TrafficStats[]>([]);
   const toastIdRef = useRef(0);
+  const logIdRef = useRef(0);
 
   // Initialize stats
   useEffect(() => {
     const initialStats = Array.from({ length: MAX_DATA_POINTS }).map((_, i) => ({
       timestamp: new Date(Date.now() - (MAX_DATA_POINTS - i) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      requests: 10 + Math.random() * 5,
-      malicious: 0
+      normal: 10 + Math.random() * 5,
+      malicious: 0,
+      requests: 10 + Math.random() * 5
     }));
     setStats(initialStats);
     statsRef.current = initialStats;
@@ -59,8 +76,11 @@ export default function App() {
       let maliciousReq = 0;
 
       if (isAttackActive) {
-        maliciousReq = 40 + Math.random() * 20;
+        maliciousReq = 150 + Math.random() * 100; // Significant jump
         
+        // Increment attacks detected count
+        setAttacksDetected(prev => prev + Math.floor(Math.random() * 3 + 1));
+
         // ML Detection Simulation
         const randomAttackIP = ATTACK_IP_POOL[Math.floor(Math.random() * ATTACK_IP_POOL.length)];
         if (!blockedIPs.find(b => b.ip === randomAttackIP) && Math.random() > 0.7) {
@@ -82,13 +102,53 @@ export default function App() {
 
       const newStat = {
         timestamp: now,
-        requests: normalReq + maliciousReq,
-        malicious: maliciousReq
+        normal: normalReq,
+        malicious: maliciousReq,
+        requests: normalReq + maliciousReq
       };
 
       const updatedStats = [...statsRef.current.slice(1), newStat];
       statsRef.current = updatedStats;
       setStats(updatedStats);
+
+      // Generate Detailed Traffic Logs
+      const newLogs: TrafficLogEntry[] = [];
+      
+      // Always add some normal traffic logs
+      const normalLogCount = isAttackActive ? Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2) + 1;
+      for (let i = 0; i < normalLogCount; i++) {
+        newLogs.push({
+          id: logIdRef.current++,
+          timestamp: now,
+          sourceIp: NORMAL_IP_POOL[Math.floor(Math.random() * NORMAL_IP_POOL.length)],
+          reqRate: `${(Math.random() * 2 + 1).toFixed(1)} req/s`,
+          payload: `${Math.floor(Math.random() * 500 + 100)}B`,
+          protocol: Math.random() > 0.5 ? 'TCP' : 'UDP',
+          classification: 'Normal',
+          confidence: `${(Math.random() * 5 + 94).toFixed(1)}%`,
+          type: 'info'
+        });
+      }
+
+      // Add attack logs if active
+      if (isAttackActive) {
+        const attackLogCount = Math.floor(Math.random() * 5) + 6; // 6 to 10 logs per second
+        for (let i = 0; i < attackLogCount; i++) {
+          newLogs.push({
+            id: logIdRef.current++,
+            timestamp: now,
+            sourceIp: ATTACK_IP_POOL[Math.floor(Math.random() * ATTACK_IP_POOL.length)],
+            reqRate: `${(Math.random() * 50 + 100).toFixed(1)} req/s`,
+            payload: '64B',
+            protocol: 'UDP',
+            classification: 'DDoS Attack',
+            confidence: `${(Math.random() * 2 + 97).toFixed(1)}%`,
+            type: 'warning'
+          });
+        }
+      }
+
+      setTrafficLogs(prev => [...newLogs, ...prev].slice(0, 50));
 
       // Update Server Load slowly
       setServerLoad(prev => {
@@ -103,11 +163,25 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isAttackActive, blockedIPs]);
 
-  const toggleAttack = () => setIsAttackActive(!isAttackActive);
+  const toggleAttack = () => {
+    const nextState = !isAttackActive;
+    setIsAttackActive(nextState);
+    
+    if (nextState) {
+      const tid = toastIdRef.current++;
+      setToasts(prev => [...prev, { id: tid, message: "CRITICAL: DDoS Attack Simulation Started!", type: 'alert' }]);
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== tid));
+      }, 5000);
+    }
+  };
+
   const resetSystem = () => {
     setBlockedIPs([]);
     setIsAttackActive(false);
     setServerLoad(12);
+    setTrafficLogs([]);
+    setAttacksDetected(0);
   };
 
   return (
@@ -162,7 +236,7 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <StatCard label="Server Load" value={`${Math.floor(serverLoad)}%`} icon={Server} color={serverLoad > 80 ? "text-red-500" : serverLoad > 50 ? "text-amber-500" : "text-emerald-500"} />
               <StatCard label="Total Requests" value={Math.floor(stats[stats.length-1]?.requests || 0).toString()} icon={Globe} />
-              <StatCard label="Attacks Detected" value={isAttackActive ? "38" : "0"} icon={Zap} color="text-red-500" />
+              <StatCard label="Attacks Detected" value={attacksDetected.toString()} icon={Zap} color="text-red-500" />
               <StatCard label="IPs Blocked" value={blockedIPs.length.toString()} icon={Lock} color="text-emerald-500" />
             </div>
 
@@ -189,7 +263,7 @@ export default function App() {
                       />
                       <Area 
                         type="monotone" 
-                        dataKey="requests" 
+                        dataKey="normal" 
                         stackId="1"
                         stroke="none" 
                         fill="#10B981" 
@@ -231,6 +305,45 @@ export default function App() {
                       </div>
                       <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded">BLOCKED</span>
                     </motion.div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="brutal-card p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl serif-heading">Live Traffic Analysis Log</h2>
+                <div className="text-[10px] font-bold uppercase tracking-widest opacity-40">Auto-updating every 1s</div>
+              </div>
+              <div className="bg-black text-[#00FF00] font-mono text-[10px] p-6 h-[300px] overflow-y-auto custom-scrollbar border-2 border-black">
+                {trafficLogs.length === 0 && <div className="opacity-50 italic">Waiting for traffic data...</div>}
+                
+                <div className="grid grid-cols-8 gap-4 border-b border-[#00FF00]/20 pb-2 mb-2 opacity-50 uppercase font-black sticky top-0 bg-black z-10">
+                  <span>Timestamp</span>
+                  <span>Source IP</span>
+                  <span>Req Rate</span>
+                  <span>Payload</span>
+                  <span>Protocol</span>
+                  <span>Classification</span>
+                  <span>Confidence</span>
+                  <span>Action</span>
+                </div>
+
+                <div className="space-y-1">
+                  {trafficLogs.map(log => (
+                    <div key={log.id} className={cn(
+                      "grid grid-cols-8 gap-4 py-1 border-b border-[#00FF00]/5",
+                      log.type === 'warning' ? "text-red-500" : "text-[#00FF00]"
+                    )}>
+                      <span>{log.timestamp}</span>
+                      <span>{log.sourceIp}</span>
+                      <span>{log.reqRate}</span>
+                      <span>{log.payload}</span>
+                      <span>{log.protocol}</span>
+                      <span className="font-bold">{log.classification}</span>
+                      <span>{log.confidence}</span>
+                      <span className="font-black">{log.type === 'warning' ? "BLOCKED" : "ALLOWED"}</span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -284,7 +397,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Toast Notifications */}
       <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-50">
         <AnimatePresence>
           {toasts.map((toast) => (
@@ -293,15 +405,25 @@ export default function App() {
               initial={{ opacity: 0, y: 50, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-[#1a1a1a] text-white p-4 brutal-card border-white/10 min-w-[280px] shadow-2xl"
+              className={cn(
+                "p-4 brutal-card min-w-[320px] shadow-2xl border-2 border-black",
+                toast.type === 'alert' ? "bg-red-600 text-white" : "bg-[#1a1a1a] text-white"
+              )}
             >
               <div className="flex items-start gap-4">
-                <div className="bg-red-500/20 p-2 rounded">
-                  <Zap className="w-5 h-5 text-red-500" />
+                <div className={cn(
+                  "p-2 rounded",
+                  toast.type === 'alert' ? "bg-white/20" : "bg-red-500/20"
+                )}>
+                  <Zap className={cn("w-5 h-5", toast.type === 'alert' ? "text-white" : "text-red-500")} />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Prevention Active</p>
-                  <p className="font-bold text-sm">Blocked IP: {toast.ip}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">
+                    {toast.type === 'alert' ? "System Alert" : "Prevention Active"}
+                  </p>
+                  <p className="font-bold text-sm">
+                    {toast.type === 'alert' ? toast.message : `Blocked IP: ${toast.ip}`}
+                  </p>
                 </div>
               </div>
             </motion.div>
