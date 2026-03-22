@@ -1,0 +1,5 @@
+{
+  "name": "DDoS Shield: ML-Powered Real-time Defense",
+  "description": "A real-time DDoS detection and prevention dashboard simulating a Random Forest-based hybrid algorithm to protect servers from malicious traffic.",
+  "requestFramePermissions": []
+}
