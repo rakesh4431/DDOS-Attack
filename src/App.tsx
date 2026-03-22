@@ -34,6 +34,7 @@ export default function App() {
   const [stats, setStats] = useState<TrafficStats[]>([]);
   const [blockedIPs, setBlockedIPs] = useState<BlockedIP[]>([]);
   const [toasts, setToasts] = useState<{id: number, ip: string}[]>([]);
+  const [serverLoad, setServerLoad] = useState(12);
   
   const statsRef = useRef<TrafficStats[]>([]);
   const toastIdRef = useRef(0);
@@ -88,6 +89,15 @@ export default function App() {
       const updatedStats = [...statsRef.current.slice(1), newStat];
       statsRef.current = updatedStats;
       setStats(updatedStats);
+
+      // Update Server Load slowly
+      setServerLoad(prev => {
+        if (isAttackActive) {
+          return Math.min(100, prev + (Math.random() * 5 + 2));
+        } else {
+          return Math.max(12, prev - (Math.random() * 3 + 1));
+        }
+      });
     }, 1000);
 
     return () => clearInterval(interval);
@@ -97,6 +107,7 @@ export default function App() {
   const resetSystem = () => {
     setBlockedIPs([]);
     setIsAttackActive(false);
+    setServerLoad(12);
   };
 
   return (
@@ -149,7 +160,7 @@ export default function App() {
           <>
             {/* Stats Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <StatCard label="Server Load" value={isAttackActive ? "100%" : "12%"} icon={Server} color="text-red-500" />
+              <StatCard label="Server Load" value={`${Math.floor(serverLoad)}%`} icon={Server} color={serverLoad > 80 ? "text-red-500" : serverLoad > 50 ? "text-amber-500" : "text-emerald-500"} />
               <StatCard label="Total Requests" value={Math.floor(stats[stats.length-1]?.requests || 0).toString()} icon={Globe} />
               <StatCard label="Attacks Detected" value={isAttackActive ? "38" : "0"} icon={Zap} color="text-red-500" />
               <StatCard label="IPs Blocked" value={blockedIPs.length.toString()} icon={Lock} color="text-emerald-500" />
